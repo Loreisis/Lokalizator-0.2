@@ -1,0 +1,273 @@
+{% extends "base.html" %}
+
+{% block body_class %}home-page{% endblock %}
+
+{% block title %}
+Lokalizator sprzętu
+{% endblock %}
+
+{% block content %}
+
+{# Strona główna — wyszukiwarka sprzętu i kafelki wszystkich sal.
+
+   Wyszukiwarka ma dwa tryby:
+   - Podpowiedzi (autocomplete) — pokazują się przy wpisywaniu, max 10,
+     pobierane przez AJAX z /api/search.
+   - Pełne wyniki — po naciśnięciu Enter formularz wysyła GET na /search.
+
+   Kafelki sal są kolorowe według grupy (bg-grad-<grupa>). Kolejność sal
+   jest już posortowana po stronie backendu (grupa → nazwa). #}
+
+<div class="container py-3">
+
+
+<h1 class="fw-bold mb-4">
+    Lokalizator sprzętu
+</h1>
+
+
+<!-- ====== Wyszukiwarka z podpowiedziami ====== -->
+{# Formularz z position-relative, żeby lista podpowiedzi mogła być
+   pozycjonowana absolutnie względem niego (pod polem input). #}
+<form
+    id="search-form"
+    action="/search"
+    method="get"
+    class="position-relative mb-5"
+>
+
+    <input
+        type="text"
+        id="search-input"
+        name="q"
+        class="form-control form-control-lg"
+        placeholder="Szukaj sprzętu..."
+        autocomplete="off"
+    >
+
+    {# Kontener podpowiedzi — wypełniany przez JS. bg-body dopasowuje
+       tło do aktualnego motywu (jasny/ciemny). #}
+    <div
+        id="search-results"
+        class="position-absolute w-100 bg-body shadow rounded-bottom"
+        style="z-index: 1000;"
+    ></div>
+
+</form>
+
+
+<!-- ====== Kafelki sal ====== -->
+<h2 class="fw-bold mb-3">
+    Sale
+</h2>
+
+
+<div class="row g-3">
+
+    {% for room in rooms %}
+
+        <div class="col-6 col-md-4 col-lg-3">
+
+            {# Kafelek sali — gradient grupy kolorystycznej z room_groups.py.
+               text-dark (nie text-body), bo tła gradientów są jasne —
+               ciemny tekst jest na nich czytelny w obu motywach. #}
+            <a
+                href="/room/{{ room['id'] }}"
+                class="btn border w-100 d-flex align-items-center justify-content-center text-dark 
+                room-card bg-grad-{{ room['group_name'] }} fw-bold"
+                style="height: 110px; font-size: 1.5rem;"
+            >
+                {{ room["name"] }}
+            </a>
+
+        </div>
+
+    {% endfor %}
+
+</div>
+
+
+</div>
+
+<script>
+/* =============================================================
+   Wyszukiwarka sprzętu z podpowiedziami (autocomplete).
+
+   Mechanizm:
+   1. Użytkownik wpisuje tekst → debounce 150 ms.
+   2. Po 150 ms bez zmian → fetch do /api/search?q=<fraza>.
+   3. Wyniki (max 10) renderowane jako klikalne linki do /eq/<id>.
+   4. Naciśnięcie Enter → formularz wysyła GET na /search (pełne wyniki).
+   5. Kliknięcie poza formularzem → czyści podpowiedzi.
+
+   Debounce zapobiega wysyłaniu żądania po każdym znaku — dopiero gdy
+   użytkownik przez chwilę nie pisze. Bez tego szybkie wpisanie
+   „laptop” wygenerowałoby 6 zapytań do serwera.
+   ============================================================= */
+
+const searchForm =
+    document.getElementById("search-form");
+
+const searchInput =
+    document.getElementById("search-input");
+
+const searchResults =
+    document.getElementById("search-results");
+
+
+// Timer do debounce — trzymamy ID setTimeout, żeby móc go anulować,
+// jeśli użytkownik wpisze kolejny znak przed upływem 150 ms.
+let searchTimeout;
+
+
+// ---- Wpisywanie tekstu ----------------------------------------
+
+searchInput.addEventListener(
+    "input",
+    function() {
+
+        const query =
+            searchInput.value.trim();
+
+
+        // Anulujemy poprzedni timer — użytkownik wciąż pisze.
+        clearTimeout(searchTimeout);
+
+
+        // Puste pole → czyścimy podpowiedzi i nic nie wysyłamy.
+        if (query.length === 0) {
+
+            searchResults.innerHTML = "";
+
+            return;
+        }
+
+
+        // Ustawiamy nowy timer — fetch poleci po 150 ms bezczynności.
+        searchTimeout = setTimeout(
+            async function() {
+
+                const response =
+                    await fetch(
+                        "/api/search?q=" +
+                        encodeURIComponent(query)
+                    );
+
+
+                const results =
+                    await response.json();
+
+
+                searchResults.innerHTML = "";
+
+
+                // Brak wyników → komunikat zamiast pustej listy.
+                if (results.length === 0) {
+
+                    searchResults.innerHTML = `
+                        <div class="p-3 border border-top-0 rounded-bottom text-muted">
+                            Nie znaleziono sprzętu.
+                        </div>
+                    `;
+
+                    return;
+                }
+
+
+                // Budowa listy wyników — każdy jako link do /eq/<id>.
+                // Parametr from=search zachowuje informację, że użytkownik
+                // przyszedł z wyszukiwarki (widok eq_detail używa tego
+                // do wygenerowania właściwego linku powrotu).
+                results.forEach(
+                    function(item) {
+
+                        const link =
+                            document.createElement("a");
+
+
+                        link.className =
+                            "d-block p-3 border border-top-0 text-decoration-none text-body";
+
+
+                        link.href =
+                            "/eq/" +
+                            item.id +
+                            "?from=search&q=" +
+                            encodeURIComponent(query);
+
+
+                        link.innerHTML =
+                            "<strong>" +
+                            item.display_name +
+                            "</strong>" +
+                            "<br>" +
+                            '<span class=\"text-muted\">' +
+                            "Sala: " +
+                            item.room_name +
+                            "</span>";
+
+
+                        searchResults.appendChild(link);
+
+                    }
+                );
+
+            },
+            150
+        );
+
+    }
+);
+
+
+// ---- Enter = pełne wyniki wyszukiwania ------------------------
+
+searchForm.addEventListener(
+    "submit",
+    function(event) {
+
+        const query =
+            searchInput.value.trim();
+
+
+        // Pusty formularz nie ma sensu — blokujemy i czyścimy podpowiedzi.
+        if (query.length === 0) {
+
+            event.preventDefault();
+
+            searchResults.innerHTML = "";
+
+            return;
+        }
+
+        // Niepusty — formularz sam wykona GET /search?q=<fraza>.
+
+    }
+);
+
+
+// ---- Kliknięcie poza wyszukiwarką zamyka podpowiedzi ----------
+
+document.addEventListener(
+    "click",
+    function(event) {
+
+        // event.target.closest("#search-form") zwraca element, jeśli
+        // kliknięcie było wewnątrz formularza (albo w jego potomkach),
+        // albo null. Interesuje nas tylko null (klik poza).
+        if (
+            !event.target.closest(
+                "#search-form"
+            )
+        ) {
+
+            searchResults.innerHTML = "";
+
+        }
+
+    }
+);
+
+</script>
+
+{% endblock %}

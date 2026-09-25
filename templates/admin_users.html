@@ -1,0 +1,185 @@
+{% extends "base.html" %}
+
+{# Panel administratora — zarządzanie użytkownikami.
+
+   Zawiera:
+   1. Formularz dodawania nowego użytkownika (nazwa, hasło, flaga admina).
+   2. Listę wszystkich użytkowników z akcjami: reset hasła, usunięcie.
+
+   Zabezpieczenia:
+   - Nie można zresetować/zmienić własnego konta przez ten panel
+     (od tego jest „Zmień hasło” w pasku nawigacji).
+   - Nie można usunąć własnego konta.
+   - Nie można usunąć ostatniego administratora (blokuje backend).
+
+   Dostęp tylko dla admina (przez @admin_required w app.py). #}
+
+{% block title %}Użytkownicy{% endblock %}
+
+{% block content %}
+
+<div class="container py-3">
+
+    <h1 class="fw-bold mb-4">
+        Użytkownicy
+    </h1>
+
+
+    <!-- ====== Sekcja 1: Dodawanie nowego użytkownika ====== -->
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+
+            <h2 class="h5 fw-bold mb-3">
+                Dodaj użytkownika
+            </h2>
+
+            <form method="post" action="{{ url_for('admin_users_add') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="mb-3">
+                    <label for="username" class="form-label">Imię</label>
+                    <input
+                        type="text"
+                        class="form-control"
+                        id="username"
+                        name="username"
+                        required
+                    >
+                </div>
+
+                {# minlength="5" to walidacja po stronie przeglądarki.
+                   Backend i tak sprawdza długość samodzielnie — to tylko
+                   szybsza informacja zwrotna dla użytkownika. #}
+                <div class="mb-3">
+                    <label for="password" class="form-label">
+                        Hasło (min. 5 znaków)
+                    </label>
+                    <input
+                        type="password"
+                        class="form-control"
+                        id="password"
+                        name="password"
+                        required
+                        minlength="5"
+                    >
+                </div>
+
+                <div class="form-check mb-3">
+                    <input
+                        class="form-check-input"
+                        type="checkbox"
+                        id="is_admin"
+                        name="is_admin"
+                    >
+                    <label class="form-check-label" for="is_admin">
+                        Administrator
+                    </label>
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    Dodaj
+                </button>
+
+            </form>
+
+        </div>
+    </div>
+
+
+    <!-- ====== Sekcja 2: Lista użytkowników ====== -->
+
+    <h2 class="h5 fw-bold mb-3">
+        Lista użytkowników
+    </h2>
+
+    <div class="d-grid gap-2">
+
+        {% for user in users %}
+
+            <div class="card border-0 shadow-sm">
+                <div class="card-body">
+
+                    {# Nagłówek karty: nazwa użytkownika + plakietki + data.
+                       Plakietka „to Ty” pomaga adminowi nie pomylić
+                       swojego konta z innymi (istotne, bo własnego konta
+                       nie można usunąć). #}
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <div>
+                            <strong>{{ user["username"] }}</strong>
+                            {% if user["is_admin"] %}
+                                <span class="badge bg-secondary ms-1">admin</span>
+                            {% endif %}
+                            {% if user["id"] == current_user.id %}
+                                <span class="badge bg-info text-dark ms-1">to Ty</span>
+                            {% endif %}
+                        </div>
+                        <small class="text-muted">
+                            od {{ user["created_at"] }}
+                        </small>
+                    </div>
+
+                    <div class="d-flex flex-wrap gap-2">
+
+                        {# Formularz resetu hasła — dostępny dla każdego
+                           użytkownika, także dla siebie (na wypadek, gdyby
+                           admin zapomniał hasła i chce je sobie zmienić
+                           bez wylogowywania się). #}
+                        <form
+                            method="post"
+                            action="{{ url_for('admin_users_reset_password', user_id=user['id']) }}"
+                            class="d-flex gap-2 flex-grow-1"
+                            onsubmit="return confirm('Zresetować hasło tego użytkownika?');"
+                        >
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                            <input
+                                type="password"
+                                class="form-control form-control-sm"
+                                name="new_password"
+                                placeholder="Nowe hasło (min. 5)"
+                                required
+                                minlength="5"
+                                style="max-width: 220px;"
+                            >
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                Reset hasła
+                            </button>
+                        </form>
+
+                        {# Przycisk usunięcia — ukryty dla własnego konta
+                           (admin nie może usunąć sam siebie, żeby nie
+                           zablokować sobie dostępu do panelu). #}
+                        {% if user["id"] != current_user.id %}
+                            <form
+                                method="post"
+                                action="{{ url_for('admin_users_delete', user_id=user['id']) }}"
+                                onsubmit="return confirm('Usunąć użytkownika {{ user['username'] }}?');"
+                            >
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                
+                                <button type="submit" class="btn btn-sm btn-outline-danger">
+                                    Usuń
+                                </button>
+                            </form>
+                        {% endif %}
+
+                    </div>
+
+                </div>
+            </div>
+
+        {% endfor %}
+
+    </div>
+
+
+    <div class="mt-4">
+        <a href="{{ url_for('home') }}" class="btn btn-outline-secondary w-100">
+            ← Powrót
+        </a>
+    </div>
+
+</div>
+
+{% endblock %}

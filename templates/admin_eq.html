@@ -1,0 +1,330 @@
+{% extends "base.html" %}
+
+{# Panel administratora — zarządzanie sprzętem.
+
+   Zawiera trzy sekcje:
+   1. Formularz dodawania nowego sprzętu (nazwa + sala).
+   2. Listę całego sprzętu z możliwością edycji nazwy i usunięcia.
+   3. Wyszukiwarkę i paginację obsługiwane po stronie klienta (JS),
+      żeby nie odpytywać serwera przy każdym znaku. #}
+
+{% block title %}Sprzęt{% endblock %}
+
+{% block content %}
+
+<div class="container py-3">
+
+    <h1 class="fw-bold mb-4">
+        Sprzęt
+    </h1>
+
+
+    <!-- ====== Sekcja 1: Dodawanie nowego sprzętu ====== -->
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+
+            <h2 class="h5 fw-bold mb-3">
+                Dodaj sprzęt
+            </h2>
+
+            <form method="post" action="{{ url_for('admin_eq_add') }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                <div class="mb-3">
+                    <label for="add-name" class="form-label">Nazwa</label>
+                    <input
+                        type="text"
+                        class="form-control"
+                        id="add-name"
+                        name="name"
+                        required
+                    >
+                </div>
+
+                <div class="mb-3">
+                    <label for="add-room" class="form-label">Sala</label>
+                    <select
+                        class="form-select"
+                        id="add-room"
+                        name="room_id"
+                        required
+                    >
+                        <option value="">— wybierz salę —</option>
+                        {% for r in rooms %}
+                            <option value="{{ r['id'] }}">{{ r["name"] }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <button type="submit" class="btn btn-primary">
+                    Dodaj
+                </button>
+
+            </form>
+
+        </div>
+    </div>
+
+
+    <!-- ====== Sekcja 2: Wyszukiwarka + lista sprzętu ====== -->
+
+    <h2 class="h5 fw-bold mb-3">
+        Lista sprzętu
+    </h2>
+
+    {# Pole wyszukiwania — filtruje listę w JS (bez żądań do serwera).
+       Szuka jednocześnie po nazwie sprzętu i po nazwie sali. #}
+    <input
+        type="text"
+        id="eq-search"
+        class="form-control mb-3"
+        placeholder="Szukaj po nazwie lub sali..."
+        autocomplete="off"
+    >
+
+
+    {# Lista sprzętu. Każda pozycja ma data-name i data-room (lowercase)
+       używane przez wyszukiwarkę do filtrowania. #}
+
+    <div id="eq-list" class="d-grid gap-2">
+
+        {% for item in items %}
+
+            <div
+                class="card border-0 shadow-sm eq-item"
+                data-name="{{ item['name']|lower }}"
+                data-room="{{ item['room_name']|lower }}"
+            >
+                <div class="card-body py-2 px-3">
+
+                    <form
+                        method="post"
+                        action="{{ url_for('admin_eq_edit', eq_id=item['id']) }}"
+                        class="row g-2 align-items-center"
+                    >
+                        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                        <div class="col-12 col-md-6">
+                            <div class="input-group input-group-sm">
+                                <input
+                                    type="text"
+                                    name="name"
+                                    value="{{ item['name'] }}"
+                                    class="form-control"
+                                    required
+                                >
+
+                                {# Numer instancji pokazujemy tylko przy duplikatach
+                                   nazwy (np. „Laptop #2”), żeby uniknąć mylenia. #}
+                                {% if item['name_count'] > 1 %}
+                                    <span class="input-group-text">
+                                        #{{ item['instance_no'] }}
+                                    </span>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <div class="col-6 col-md-3">
+                            <span class="text-muted small">
+                                {{ item["room_name"] }}
+                            </span>
+                        </div>
+
+                        <div class="col-6 col-md-3 d-flex gap-2 justify-content-end">
+                            <button
+                                type="submit"
+                                class="btn btn-sm btn-outline-secondary"
+                            >
+                                Zapisz
+                            </button>
+                            {# data-eq-id i data-eq-name są odczytywane przez JS.
+                               Nie używamy onclick, żeby nazwa ze znakami
+                               specjalnymi nie psuła atrybutu. #}
+                            <button
+                                type="button"
+                                class="btn btn-sm btn-outline-danger delete-eq-btn"
+                                data-eq-id="{{ item['id'] }}"
+                                data-eq-name="{{ item['name'] }}"
+                            >
+                                Usuń
+                            </button>
+                        </div>
+
+                    </form>
+
+                </div>
+            </div>
+
+        {% endfor %}
+
+    </div>
+
+    <div id="no-eq-results" class="text-center text-muted py-4" style="display: none;">
+        Brak sprzętu spełniającego kryteria.
+    </div>
+
+    {# Przycisk „Pokaż więcej” — pokazuje kolejne 10 pozycji.
+       Widoczność i treść przycisku są sterowane przez JS. #}
+    <button
+        id="show-more-button"
+        type="button"
+        class="btn btn-outline-secondary w-100 my-3"
+        style="display: none;"
+    >
+        Pokaż więcej
+    </button>
+
+
+    <div class="mt-4">
+        <a href="{{ url_for('home') }}" class="btn btn-outline-secondary w-100">
+            ← Powrót
+        </a>
+    </div>
+
+
+    {# Ukryte formularze do usuwania sprzętu — po jednym na pozycję.
+       JS wywołuje form.submit() po potwierdzeniu przez użytkownika.
+       Dzięki temu formularz jest poza głównym formularzem edycji
+       i nie ma problemu z zagnieżdżaniem formularzy. #}
+
+    {% for item in items %}
+        <form
+            id="delete-eq-{{ item['id'] }}"
+            method="post"
+            action="{{ url_for('admin_eq_delete', eq_id=item['id']) }}"
+            style="display: none;"
+        ></form>
+    {% endfor %}
+
+</div>
+
+
+<script>
+/* =============================================================
+   Logika listy sprzętu w panelu admina:
+
+   1. Filtrowanie po stronie klienta (bez odpytywania serwera).
+   2. Paginacja „Pokaż więcej” — domyślnie widocznych 10 pozycji,
+      po kliknięciu kolejne 10.
+   3. Potwierdzenie usunięcia sprzętu.
+
+   Wyszukiwarka filtruje po nazwie sprzętu ORAZ nazwie sali (data-name
+   i data-room). Przy wpisaniu nowej frazy paginacja resetuje się
+   do pierwszej strony.
+   ============================================================= */
+
+const INITIAL_VISIBLE = 10;
+const PAGE_SIZE = 10;
+
+const eqList = document.getElementById("eq-list");
+const eqSearch = document.getElementById("eq-search");
+const showMoreButton = document.getElementById("show-more-button");
+const noResults = document.getElementById("no-eq-results");
+
+let visibleEqCount = INITIAL_VISIBLE;
+
+
+/**
+ * Przelicza, które pozycje mają być widoczne na podstawie:
+ *  - aktualnej frazy w wyszukiwarce,
+ *  - liczby aktualnie widocznych pozycji (visibleEqCount).
+ *
+ * Wywoływana po każdej zmianie frazy albo kliknięciu „Pokaż więcej”.
+ */
+function updateEqVisibility() {
+
+    const query = eqSearch.value.trim().toLowerCase();
+    const items = Array.from(eqList.querySelectorAll(".eq-item"));
+
+    // Krok 1: filtrowanie — pozycje pasujące do frazy (albo wszystkie,
+    // gdy fraza jest pusta).
+    const matches = items.filter(function(item) {
+        if (!query) return true;
+        return (
+            item.dataset.name.includes(query) ||
+            item.dataset.room.includes(query)
+        );
+    });
+
+    // Krok 2: ukryj wszystkie, potem pokaż tylko pierwsze N pasujących.
+    items.forEach(function(item) {
+        item.style.display = "none";
+    });
+
+    matches
+        .slice(0, visibleEqCount)
+        .forEach(function(item) {
+            item.style.display = "";
+        });
+
+    // Krok 3: aktualizacja przycisku „Pokaż więcej”.
+    const hiddenCount = matches.length - visibleEqCount;
+
+    if (hiddenCount > 0) {
+        showMoreButton.style.display = "";
+        const amount = Math.min(PAGE_SIZE, hiddenCount);
+        showMoreButton.textContent = "Pokaż " + amount + " więcej";
+    } else {
+        showMoreButton.style.display = "none";
+    }
+
+    // Krok 4: komunikat „brak wyników” — tylko jeśli lista nie jest
+    // w ogóle pusta (w przeciwnym razie nie ma sensu pokazywać nic).
+    if (matches.length === 0 && items.length > 0) {
+        noResults.style.display = "";
+    } else {
+        noResults.style.display = "none";
+    }
+
+}
+
+
+// Wpisanie tekstu w wyszukiwarce: reset paginacji + przeliczenie listy.
+eqSearch.addEventListener(
+    "input",
+    function() {
+        visibleEqCount = INITIAL_VISIBLE;
+        updateEqVisibility();
+    }
+);
+
+
+// Kliknięcie „Pokaż więcej”: zwiększ liczbę widocznych pozycji.
+showMoreButton.addEventListener(
+    "click",
+    function() {
+        visibleEqCount += PAGE_SIZE;
+        updateEqVisibility();
+    }
+);
+
+
+/* Usuwanie sprzętu — delegacja zdarzeń */
+
+eqList.addEventListener(
+    "click",
+    function(event) {
+        const button = event.target.closest(".delete-eq-btn");
+        if (!button) return;
+
+        const eqId = button.dataset.eqId;
+        const eqName = button.dataset.eqName;
+
+        if (confirm(
+            'Usunąć sprzęt "' + eqName +
+            '"? Historia przeniesień tego sprzętu również zostanie usunięta.'
+        )) {
+            document.getElementById("delete-eq-" + eqId).submit();
+        }
+    }
+);
+
+
+// Pierwsze wywołanie po załadowaniu strony — żeby paginacja od razu
+// zadziałała (bez tego wszystkie pozycje byłyby widoczne).
+updateEqVisibility();
+
+</script>
+
+{% endblock %}

@@ -1,0 +1,129 @@
+/* =============================================================
+   style.css — style własne aplikacji „Lokalizator sprzętu”.
+
+   Bootstrap 5.3 obsługuje większość wyglądu (tryb ciemny, przyciski,
+   karty). Tutaj znajdują się tylko rzeczy, których Bootstrap nie ma
+   w standardzie: gradienty grup sal, poprawki czytelności w trybie
+   ciemnym oraz drobne efekty „metaliczne”.
+
+   Wartości hsl() w gradientach mają format:
+       hsl(odcień, nasycenie%, jasność%)
+
+   Odcień:     0 = czerwony, 45 = żółty, 210 = niebieski, 270 = fioletowy
+   Nasycenie:  im wyżej, tym żywszy kolor (25–45% = stonowany)
+   Jasność:    im wyżej, tym jaśniejszy (72–90% = bezpieczne dla ciemnego tekstu)
+   ============================================================= */
+
+
+/* =============================================================
+   GRADIENTY GRUP SAL
+
+   Kąt -25deg = kierunek z prawego dolnego rogu do lewego górnego.
+   Trzy przystanki (0%, 65%, 100%) dają efekt metalicznego odblasku.
+   Każda klasa odpowiada jednej grupie z room_groups.py.
+   ============================================================= */
+
+.bg-grad-deb {
+    background-image: linear-gradient(
+        -25deg,
+        hsl(210, 45%, 58%) 0%,
+        hsl(210, 35%, 85%) 65%,
+        hsl(210, 35%, 67%) 100%
+    );
+}
+
+.bg-grad-sww {
+    background-image: linear-gradient(
+        -25deg,
+        hsl(0, 35%, 55%) 0%,
+        hsl(0, 35%, 85%) 65%,
+        hsl(0, 35%, 74%) 100%
+    );
+}
+
+.bg-grad-snw {
+    background-image: linear-gradient(
+        -25deg,
+        hsl(45, 55%, 62%) 0%,
+        hsl(45, 55%, 88%) 65%,
+        hsl(45, 55%, 76%) 100%
+    );
+}
+
+.bg-grad-magazyn {
+    background-image: linear-gradient(
+        -25deg,
+        hsl(270, 25%, 68%) 0%,
+        hsl(270, 25%, 87%) 65%,
+        hsl(270, 25%, 78%) 100%
+    );
+}
+
+.bg-grad-inne {
+    background-image: linear-gradient(
+        -25deg,
+        hsl(0, 0%, 67%) 0%,
+        hsl(0, 0%, 90%) 65%,
+        hsl(0, 0%, 76%) 100%
+    );
+}
+
+/* =============================================================
+   POPRAWKI CZYTELNOŚCI W TRYBIE CIEMNYM
+
+   Bootstrap 5.3 ma tryb ciemny (data-bs-theme="dark"), ale niektóre
+   komponenty są w nim zbyt subtelne na czystym czarnym tle. Poniższe
+   reguły rozjaśniają je dla lepszego kontrastu.
+   ============================================================= */
+
+/* Przyciski drugorzędne (Wyloguj, Powrót, Pokaż więcej itp.) —
+   w ciemnym motywie były zbyt mało widoczne. */
+html[data-bs-theme="dark"] .btn-outline-secondary {
+    color: #e9ecef;
+    border-color: #adb5bd;
+}
+
+html[data-bs-theme="dark"] .btn-outline-secondary:hover {
+    color: #000;
+    background-color: #e9ecef;
+    border-color: #e9ecef;
+}
+
+/* Nazwa użytkownika w pasku nawigacji — domyślnie szara,
+   słabo widoczna na czarnym tle. */
+html[data-bs-theme="dark"] .navbar .navbar-text {
+    color: #f8f9fa;
+}
+
+/* Karty (kafelki sprzętu, karty w panelu admina) — domyślne tło
+   było zbyt zbliżone do czarnego body, karty „zlewały się” z tłem.
+   Rozjaśnienie + subtelna obwódka wyraźnie je odcinają. */
+html[data-bs-theme="dark"] .card {
+    background-color: #1c1f23;
+    border: 1px solid #343a40 !important;
+}
+
+/* Czysta czerń jako tło zamiast domyślnego #212529 z Bootstrapa. */
+html[data-bs-theme="dark"] {
+    --bs-body-bg: #000000;
+}
+
+/* =============================================================
+   NAGŁÓWEK SALI (widok /room/<id>)
+
+   Gradient grupy pojawia się jako pasek na górze strony z nazwą sali.
+   Tekst jest ciemny (bo gradienty są jasne), z delikatnym białym
+   cieniem tworzącym efekt wytłoczenia pasujący do „metalu”.
+   ============================================================= */
+
+.room-header {
+    color: #1a1a1a;
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.55),
+        0 1px 2px rgba(0, 0, 0, 0.15);
+}
+
+.room-header h1 {
+    color: #1a1a1a;
+    text-shadow: 0 1px 0 rgba(255, 255, 255, 0.35);
+}

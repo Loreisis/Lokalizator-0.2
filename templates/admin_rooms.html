@@ -1,0 +1,222 @@
+{% extends "base.html" %}
+
+{# Panel administratora — zarządzanie salami.
+
+   Zawiera:
+   1. Formularz dodawania nowej sali.
+   2. Listę sal z akcjami (zmiana nazwy, usunięcie).
+   3. Paginację „Pokaż więcej” (domyślnie 10 sal, po kliknięciu kolejne 10).
+
+   Grupa kolorystyczna sali (group_name) NIE jest tutaj edytowalna —
+   przypisanie odbywa się przez plik room_groups.py i skrypt
+   apply_room_groups.py. #}
+
+{% block title %}Sale{% endblock %}
+
+{% block content %}
+
+<div class="container py-3">
+
+    <h1 class="fw-bold mb-4">
+        Sale
+    </h1>
+
+
+    <!-- ====== Sekcja 1: Dodawanie nowej sali ====== -->
+
+    <div class="card border-0 shadow-sm mb-4">
+        <div class="card-body">
+
+            <h2 class="h5 fw-bold mb-3">
+                Dodaj salę
+            </h2>
+
+            <form
+                method="post"
+                action="{{ url_for('admin_rooms_add') }}"
+                class="d-flex gap-2"
+            >
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input
+                    type="text"
+                    class="form-control"
+                    name="name"
+                    placeholder="Nazwa sali"
+                    required
+                >
+                <button type="submit" class="btn btn-primary">
+                    Dodaj
+                </button>
+            </form>
+
+        </div>
+    </div>
+
+
+    <!-- ====== Sekcja 2: Lista sal ====== -->
+
+    <h2 class="h5 fw-bold mb-3">
+        Lista sal
+    </h2>
+
+    <div id="room-list" class="d-grid gap-2">
+
+        {% for room in rooms %}
+
+            <div class="card border-0 shadow-sm room-item">
+                <div class="card-body py-2 px-3">
+
+                    <div class="d-flex align-items-center gap-3">
+
+                        {# Nazwa sali i licznik sprzętu — jedna kolumna,
+                           nazwa nad licznikiem. text-nowrap zapobiega
+                           łamaniu obu linii w środku. #}
+                        <div class="d-flex flex-column">
+                            <strong class="text-nowrap">{{ room["name"] }}</strong>
+                            <small class="text-muted text-nowrap">
+                                ({{ room["eq_count"] }} szt.)
+                            </small>
+                        </div>
+
+                        {# Formularz zmiany nazwy — ms-auto wypycha go w prawo,
+                           zostawiając nazwę sali po lewej stronie. #}
+                        <form
+                            method="post"
+                            action="{{ url_for('admin_rooms_rename', room_id=room['id']) }}"
+                            class="d-flex align-items-center gap-2 ms-auto"
+                        >
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+                            <input
+                                type="text"
+                                class="form-control form-control-sm"
+                                name="name"
+                                value="{{ room['name'] }}"
+                                required
+                                style="max-width: 200px;"
+                            >
+                            <button type="submit" class="btn btn-sm btn-outline-secondary">
+                                Zmień nazwę
+                            </button>
+                            
+                        </form>
+
+                        {# Usuwanie — przycisk disabled, gdy w sali jest sprzęt.
+                           Backend i tak blokuje usunięcie (patrz admin_rooms_delete),
+                           ale disabled daje użytkownikowi od razu czytelną wskazówkę. #}
+                        <form
+                            method="post"
+                            action="{{ url_for('admin_rooms_delete', room_id=room['id']) }}"
+                            onsubmit="return confirm('Usunąć salę {{ room['name'] }}?');"
+                        >
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button
+                                type="submit"
+                                class="btn btn-sm btn-outline-danger text-nowrap"
+                                {% if room["eq_count"] > 0 %}disabled{% endif %}
+                            >
+                                Usuń
+                            </button>
+                        </form>
+
+                    </div>
+
+                </div>
+            </div>
+
+        {% endfor %}
+
+    </div>
+
+
+    {# Przycisk „Pokaż więcej” — pokazuje kolejne 10 sal.
+       Widoczność i treść sterowane przez JS. #}
+    <button
+        id="show-more-button"
+        type="button"
+        class="btn btn-outline-secondary w-100 my-3"
+        style="display: none;"
+    >
+        Pokaż więcej
+    </button>
+
+
+    <div class="mt-4">
+        <a href="{{ url_for('home') }}" class="btn btn-outline-secondary w-100">
+            ← Powrót
+        </a>
+    </div>
+
+</div>
+
+
+<script>
+/* =============================================================
+   Logika listy sal w panelu admina:
+
+   Paginacja „Pokaż więcej” — domyślnie widocznych 10 sal,
+   po kliknięciu kolejne 10. Cała logika działa po stronie klienta,
+   bez odpytywania serwera. Sale są już posortowane po stronie
+   backendu (get_rooms_with_counts), więc tutaj tylko pokazujemy
+   lub ukrywamy istniejące elementy DOM.
+   ============================================================= */
+
+const INITIAL_VISIBLE = 10;
+const PAGE_SIZE = 10;
+
+const roomList = document.getElementById("room-list");
+const showMoreButton = document.getElementById("show-more-button");
+
+let visibleRoomCount = INITIAL_VISIBLE;
+
+
+/**
+ * Pokazuje pierwsze `visibleRoomCount` pozycji z listy sal,
+ * ukrywa pozostałe i aktualizuje stan przycisku „Pokaż więcej”.
+ *
+ * Wywoływana po załadowaniu strony oraz po każdym kliknięciu
+ * przycisku „Pokaż więcej”.
+ */
+function updateRoomVisibility() {
+
+    const items = roomList.querySelectorAll(".room-item");
+
+    items.forEach(function(item, index) {
+        if (index < visibleRoomCount) {
+            item.style.display = "";
+        } else {
+            item.style.display = "none";
+        }
+    });
+
+    // Aktualizacja przycisku: pokazujemy go tylko, jeśli coś zostało ukryte.
+    const hiddenCount = items.length - visibleRoomCount;
+
+    if (hiddenCount > 0) {
+        showMoreButton.style.display = "";
+        const amount = Math.min(PAGE_SIZE, hiddenCount);
+        showMoreButton.textContent = "Pokaż " + amount + " więcej";
+    } else {
+        showMoreButton.style.display = "none";
+    }
+
+}
+
+
+// Kliknięcie „Pokaż więcej”: zwiększ liczbę widocznych pozycji.
+showMoreButton.addEventListener(
+    "click",
+    function() {
+        visibleRoomCount += PAGE_SIZE;
+        updateRoomVisibility();
+    }
+);
+
+
+// Pierwsze wywołanie po załadowaniu strony — bez tego wszystkie
+// sale byłyby widoczne od razu (bo HTML renderuje je wszystkie).
+updateRoomVisibility();
+
+</script>
+
+{% endblock %}

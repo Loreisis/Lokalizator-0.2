@@ -1,0 +1,479 @@
+{% extends "base.html" %}
+
+{# Szczegóły sprzętu.
+
+   Zawiera:
+   1. Nazwę sprzętu (z numerem #N, jeśli są duplikaty).
+   2. Aktualną lokalizację.
+   3. Przycisk przenoszenia + listę sal docelowych.
+   4. Historię przeniesień z paginacją (5 domyślnie, potem po 10).
+   5. Link powrotu zależny od tego, skąd użytkownik przyszedł
+      (wyniki wyszukiwania albo widok sali).
+
+   Przenoszenie odbywa się przez AJAX (fetch do /move_eq) — bez
+   przeładowania strony. Serwer zwraca JSON, na podstawie którego JS
+   aktualizuje lokalizację, listę dostępnych sal i historię. #}
+
+{% block content %}
+
+<div class="container py-3">
+
+    <h1 class="mb-3">
+        {{ eq["display_name"] }}
+    </h1>
+
+    <div class="mb-4">
+        Aktualna lokalizacja:
+        <strong id="current-room" class="fs-5">
+            {{ room["name"] }}
+        </strong>
+    </div>
+
+
+    <!-- ====== PRZENOSZENIE ====== -->
+
+
+    <div class="mb-4">
+
+        <button
+            class="btn btn-primary btn-lg w-100"
+            onclick="showRooms()"
+            type="button"
+        >
+            Przenieś sprzęt
+        </button>
+
+        {# Lista sal docelowych — domyślnie ukryta, pokazywana po
+           kliknięciu „Przenieś sprzęt”. Aktualna sala jest ukryta
+           (nie ma sensu przenosić sprzętu do tej samej sali). #}
+        <div
+            id="move-rooms"
+            class="mt-2"
+            style="display: none;"
+        >
+
+            <div class="small text-muted mb-2">
+                Wybierz salę docelową:
+            </div>
+
+            <div class="d-grid gap-2">
+
+                {% for target_room in rooms %}
+
+                    {# data-room-id używane przez JS do identyfikacji
+                       przycisku po ID (bez parsowania onclick). #}
+                    <button
+                        class="btn btn-outline-secondary room-button"
+                        data-room-id="{{ target_room['id'] }}"
+                        onclick="moveEquipment(
+                            {{ target_room['id'] }},
+                            '{{ target_room['name'] }}'
+                        )"
+                        type="button"
+                        {% if target_room["id"] == room["id"] %}
+                            style="display: none;"
+                        {% endif %}
+                    >
+                        {{ target_room["name"] }}
+                    </button>
+
+                {% endfor %}
+
+            </div>
+
+        </div>
+
+    </div>
+
+
+    <!-- ====== HISTORIA PRZENIESIEŃ ====== -->
+
+    <h2 class="mb-3">
+        Historia przenoszenia
+    </h2>
+
+    <div id="history-list">
+
+        {% if history %}
+
+            {% for move in history %}
+
+                <div class="history-entry mb-3">
+
+                    <div>
+                        <strong>
+                            {{ move["from_room_name"] }}
+                            →
+                            {{ move["to_room_name"] }}
+                        </strong>
+                    </div>
+
+                    <small class="text-muted d-block">
+                        {{ move["moved_at"] }}
+                    </small>
+
+                    <small class="text-muted d-block">
+                        Wykonał: 
+                        {{ move["performed_by"] }}
+                        
+                    </small>
+
+                </div>
+
+            {% endfor %}
+
+        {% else %}
+
+            {# Komunikat widoczny tylko przy pustej historii.
+               JS go usuwa po dodaniu pierwszego wpisu przez AJAX. #}
+            <p id="no-history">
+                Brak historii przenoszenia.
+            </p>
+
+        {% endif %}
+
+    </div>
+
+
+    {# Przycisk paginacji historii — pokazuje kolejne 10 wpisów.
+       Widoczność i treść sterowane przez JS. #}
+    <button
+        id="show-more-button"
+        type="button"
+        class="btn btn-outline-secondary w-100 mb-4"
+        style="display: none;"
+    >
+        Pokaż 10 wcześniejszych
+    </button>
+
+
+    <!-- ====== POWRÓT ====== -->
+
+    {# Link powrotu zależy od tego, skąd użytkownik przyszedł.
+       Jeśli z wyników wyszukiwania — wraca do listy z zachowaną frazą.
+       W przeciwnym razie — wraca do widoku aktualnej sali. #}
+
+    {% if from_page == "search" %}
+
+        <a
+            href="/search?q={{ search_query }}"
+            class="btn btn-outline-secondary w-100"
+        >
+            ← Powrót do wyników wyszukiwania
+        </a>
+
+    {% else %}
+
+        <a
+            href="/room/{{ room['id'] }}"
+            class="btn btn-outline-secondary w-100"
+        >
+            ← Powrót do {{ room["name"] }}
+        </a>
+
+    {% endif %}
+
+</div>
+
+
+<script>
+/* =============================================================
+   Logika przenoszenia sprzętu i paginacji historii.
+
+   Przenoszenie odbywa się przez fetch do /move_eq/<id> z JSON-em
+   { room_id: N }. Serwer odpowiada JSON-em:
+       { success: true, old_room, new_room,
+         old_room_id, new_room_id, moved_at }
+
+   Po sukcesie JS aktualizuje bez przeładowania:
+   1. Napis „Aktualna lokalizacja”.
+   2. Ukrywa listę sal (bo operacja zakończona).
+   3. Ukrywa przycisk nowej sali, pokazuje stary (można wrócić).
+   4. Usuwa komunikat „brak historii”, jeśli istniał.
+   5. Dodaje nowy wpis na początek historii.
+   ============================================================= */
+
+
+/**
+ * Pokazuje/ukrywa listę sal docelowych.
+ * Wywoływane przez onclick przycisku „Przenieś sprzęt”.
+ */
+function showRooms() {
+
+    const rooms =
+        document.getElementById("move-rooms");
+
+    rooms.style.display =
+        rooms.style.display === "none"
+            ? "block"
+            : "none";
+}
+
+
+/**
+ * Przenosi sprzęt do wybranej sali przez AJAX.
+ *
+ * @param {number} roomId   ID sali docelowej.
+ * @param {string} roomName Nazwa sali docelowej (do komunikatu, choć
+ *                          po sukcesie i tak używamy data.new_room).
+ */
+async function moveEquipment(roomId, roomName) {
+
+    const response = await fetch(
+        "/move_eq/{{ eq['id'] }}",
+        {
+            method: "POST",
+
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content
+            },
+
+            body: JSON.stringify({
+                room_id: roomId
+            })
+        }
+    );
+
+
+    const data =
+        await response.json();
+
+
+    // Serwer zwraca success: false przy błędzie walidacji (np. ta sama
+    // sala, brak sali docelowej). Pokazujemy komunikat i kończymy.
+    if (!data.success) {
+
+        alert(data.error);
+
+        return;
+    }
+
+
+    // 1. Aktualizacja napisu „Aktualna lokalizacja”.
+
+    document.getElementById(
+        "current-room"
+    ).textContent = data.new_room;
+
+
+    // 2. Schowanie listy sal (operacja zakończona).
+
+    document.getElementById(
+        "move-rooms"
+    ).style.display = "none";
+
+
+    // 3. Zamiana widoczności przycisków sal:
+    //    nowa aktualna sala → ukryj (nie można przenieść do tej samej),
+    //    poprzednia sala → pokaż (można wrócić).
+
+
+    const roomButtons =
+        document.querySelectorAll(
+            ".room-button"
+        );
+
+
+    roomButtons.forEach(
+        function(button) {
+
+            const buttonRoomId =
+                Number(
+                    button.dataset.roomId
+                );
+
+
+            if (
+                buttonRoomId === data.new_room_id
+            ) {
+
+                button.style.display = "none";
+
+            }
+
+
+            if (
+                buttonRoomId === data.old_room_id
+            ) {
+
+                button.style.display = "";
+
+            }
+
+        }
+    );
+
+
+    // 4. Usunięcie komunikatu „brak historii”, jeśli był widoczny
+    //    (zdarza się, gdy sprzęt nie był wcześniej przenoszony).
+
+    const noHistory =
+        document.getElementById(
+            "no-history"
+        );
+
+
+    if (noHistory) {
+
+        noHistory.remove();
+
+    }
+
+
+    // 5. Dodanie nowego wpisu na początek historii.
+    //    Używamy innerHTML, bo tworzenie 5 zagnieżdżonych elementów
+    //    przez createElement byłoby znacznie dłuższe. Nazwy sal i data
+    //    pochodzą z serwera, więc nie są danymi użytkownika — można je
+    //    bezpiecznie wstawiać.
+
+    const historyList =
+        document.getElementById(
+            "history-list"
+        );
+
+
+    const historyEntry =
+        document.createElement(
+            "div"
+        );
+
+
+    historyEntry.className =
+        "history-entry mb-3";
+
+
+    historyEntry.innerHTML =
+        "<div>" +
+            "<strong>" +
+                data.old_room +
+                " → " +
+                data.new_room +
+            "</strong>" +
+        "</div>" +
+
+        "<small class=\"text-muted d-block\">" +
+            data.moved_at +
+        "</small>" +
+
+        "<small class=\"text-muted d-block\">" +
+            "Wykonał: {{ current_user.username }}" +
+        "</small>";
+
+
+    historyList.prepend(
+        historyEntry
+    );
+
+
+    // 6. Przeliczenie paginacji — nowy wpis może wyjść poza
+    //    aktualnie widoczny zakres (choć trafia na początek, więc
+    //    prawdopodobnie będzie widoczny od razu).
+
+    updateHistoryVisibility();
+
+}
+
+
+/* =============================================================
+   Paginacja historii przeniesień.
+   Domyślnie widocznych 5 wpisów, po kliknięciu „Pokaż więcej”
+   kolejne 10. Cała logika po stronie klienta.
+   ============================================================= */
+
+const historyList =
+    document.getElementById(
+        "history-list"
+    );
+
+
+const showMoreButton =
+    document.getElementById(
+        "show-more-button"
+    );
+
+
+let visibleHistoryCount = 5;
+
+
+/**
+ * Pokazuje pierwsze `visibleHistoryCount` wpisów historii,
+ * ukrywa pozostałe i aktualizuje przycisk „Pokaż więcej”.
+ */
+function updateHistoryVisibility() {
+
+    const entries =
+        historyList.querySelectorAll(
+            ".history-entry"
+        );
+
+
+    entries.forEach(
+        function(entry, index) {
+
+            if (
+                index < visibleHistoryCount
+            ) {
+
+                entry.style.display = "";
+
+            } else {
+
+                entry.style.display = "none";
+
+            }
+
+        }
+    );
+
+
+    const hiddenCount =
+        entries.length -
+        visibleHistoryCount;
+
+
+    if (hiddenCount > 0) {
+
+        showMoreButton.style.display = "";
+
+        const amount =
+            Math.min(
+                10,
+                hiddenCount
+            );
+
+        showMoreButton.textContent =
+            "Pokaż " +
+            amount +
+            " wcześniejszych";
+
+    } else {
+
+        showMoreButton.style.display =
+            "none";
+
+    }
+
+}
+
+
+// Kliknięcie „Pokaż więcej”: zwiększ liczbę widocznych wpisów o 10.
+showMoreButton.addEventListener(
+    "click",
+    function() {
+
+        visibleHistoryCount += 10;
+
+        updateHistoryVisibility();
+
+    }
+);
+
+
+// Pierwsze wywołanie po załadowaniu — ustawia widoczność wpisów
+// i stan przycisku.
+updateHistoryVisibility();
+
+</script>
+
+{% endblock %}

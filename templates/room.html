@@ -1,0 +1,299 @@
+{% extends "base.html" %}
+{% block title %}
+{{ room["name"] }}
+{% endblock %}
+
+{% block content %}
+
+{# Widok pojedynczej sali — lista sprzętu w niej się znajdującego.
+
+   Każdy kafelek sprzętu ma ukryte akcje (rozwijane kliknięciem):
+   1. Przycisk „Przenieś sprzęt”.
+   2. Lista sal docelowych (bez aktualnej sali).
+
+   Po przeniesieniu kafelek sprzętu znika z listy, u góry pojawia się
+   komunikat potwierdzający, a jeśli lista opustoszeje — pokazuje się
+   zastępcza karta „Brak sprzętu”. Wszystko bez przeładowania strony.
+
+   Nagłówek sali ma gradient grupy kolorystycznej (bg-grad-<grupa>),
+   zgodny z kafelkiem na stronie głównej. #}
+
+<div class="container py-4">
+
+    {# Nagłówek z gradientem grupy. Nazwa sali jest duża i pogrubiona,
+       tło pochodzi z room_groups.py (przez pole group_name). #}
+    <div class="room-header bg-grad-{{ room['group_name'] }} rounded mb-4 p-4">
+        <h1 class="fw-bold mb-0">
+            {{ room["name"] }}
+        </h1>
+    </div>
+
+    {# Komunikat potwierdzający przeniesienie — ukryty domyślnie.
+       JS go pokazuje i ustawia treść po udanym przeniesieniu. #}
+    <div id="message" class="alert alert-success d-none" role="alert"></div>
+
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <h2 class="fw-bold mb-0">
+            Sprzęt
+        </h2>
+    </div>
+
+    {# Kontener listy sprzętu — używany przez JS do sprawdzenia,
+       czy lista jest pusta (po usunięciu ostatniego kafelka). #}
+    <div id="equipment-list">
+
+        {% for item in eq %}
+
+            {# Każdy kafelek ma unikalne id (eq-<ID>), żeby JS mógł
+               go usunąć po przeniesieniu tego konkretnego sprzętu. #}
+            <div class="card shadow-sm border-0 mb-2" id="eq-{{ item['id'] }}">
+
+                <div class="card-body p-3">
+
+                    <div class="d-flex justify-content-between align-items-center">
+
+                        {# Nazwa sprzętu jako klikalny przycisk (wygląda
+                           jak tekst, ale rozwija akcje). #}
+                        <button
+                            class="btn btn-link text-body text-decoration-none fw-semibold text-start p-0 flex-grow-1"
+                            onclick="showActions({{ item['id'] }})"
+                        >
+                            {{ item["display_name"] }}
+                        </button>
+
+
+                    </div>
+
+                    {# Akcje — domyślnie ukryte, pokazywane po kliknięciu
+                       nazwy sprzętu (przycisk showActions). #}
+                    <div
+                        class="eq-actions mt-3"
+                        id="actions-{{ item['id'] }}"
+                        style="display: none;"
+                    >
+
+                        <button
+                            class="btn btn-primary w-100"
+                            onclick="showRooms({{ item['id'] }})"
+                            type="button"
+                        >
+                            Przenieś sprzęt
+                        </button>
+
+                    </div>
+
+                    {# Lista sal docelowych — domyślnie ukryta, pokazywana
+                       po kliknięciu „Przenieś sprzęt”. Aktualna sala jest
+                       pomijana (nie ma sensu przenosić sprzętu do tej samej). #}
+                    <div
+                        class="move-rooms mt-2"
+                        id="rooms-{{ item['id'] }}"
+                        style="display: none;"
+                    >
+
+                        <div class="small text-muted mb-2">
+                            Wybierz salę docelową:
+                        </div>
+
+                        <div class="d-grid gap-2">
+
+                            {% for target_room in rooms %}
+
+                                {% if target_room['id'] != room['id'] %}
+
+                                    <button
+                                        class="btn btn-outline-secondary"
+                                        onclick="moveEquipment(
+                                            {{ item['id'] }},
+                                            {{ target_room['id'] }},
+                                            '{{ target_room['name'] }}'
+                                        )"
+                                        type="button"
+                                    >
+                                        {{ target_room["name"] }}
+                                    </button>
+
+                                {% endif %}
+
+                            {% endfor %}
+
+                        </div>
+
+                    </div>
+
+                </div>
+
+            </div>
+
+        {% else %}
+
+            {# Komunikat widoczny, gdy sala jest pusta (od pierwszego
+               załadowania strony albo po przeniesieniu ostatniego sprzętu). #}
+            <div class="card border-0 shadow-sm">
+
+                <div class="card-body text-center py-5">
+
+                    <h4 class="fw-bold">
+                        Brak sprzętu
+                    </h4>
+
+                    <p class="text-muted mb-0">
+                        W tej sali nie znajduje się obecnie żaden sprzęt.
+                    </p>
+
+                </div>
+
+            </div>
+
+        {% endfor %}
+
+    </div>
+
+    <div class="mt-4">
+
+        <a
+            href="/"
+            class="btn btn-outline-secondary w-100"
+        >
+            ← Powrót
+        </a>
+
+    </div>
+
+</div>
+
+<script>
+/* =============================================================
+   Logika widoku sali:
+
+   1. Rozwijanie akcji pod nazwą sprzętu (showActions).
+   2. Rozwijanie listy sal docelowych (showRooms).
+   3. Przenoszenie sprzętu przez AJAX (moveEquipment) — usuwa
+      kafelek z listy, pokazuje potwierdzenie, a jeśli lista opustoszeje
+      wstawia zastępczą kartę „Brak sprzętu”.
+
+   Każdy sprzęt ma własne, niezależne bloki (actions-<id>, rooms-<id>),
+   żeby rozwijanie jednego nie wpływało na inne kafelki.
+   ============================================================= */
+
+
+/**
+ * Pokazuje/ukrywa blok akcji pod nazwą sprzętu.
+ *
+ * @param {number} eqId ID sprzętu, którego akcje przełączamy.
+ */
+function showActions(eqId) {
+
+    const actions = document.getElementById(
+        "actions-" + eqId
+    );
+
+    actions.style.display =
+        actions.style.display === "none"
+            ? "block"
+            : "none";
+}
+
+
+/**
+ * Pokazuje/ukrywa listę sal docelowych dla danego sprzętu.
+ *
+ * @param {number} eqId ID sprzętu.
+ */
+function showRooms(eqId) {
+
+    const rooms = document.getElementById(
+        "rooms-" + eqId
+    );
+
+    rooms.style.display =
+        rooms.style.display === "none"
+            ? "block"
+            : "none";
+}
+
+
+/**
+ * Przenosi sprzęt do wybranej sali przez AJAX.
+ *
+ * Po sukcesie:
+ *  - usuwa kafelek sprzętu z listy (id="eq-<eqId>"),
+ *  - pokazuje komunikat potwierdzający u góry strony,
+ *  - jeśli lista opustoszała, wstawia kartę „Brak sprzętu”.
+ *
+ * @param {number} eqId     ID sprzętu.
+ * @param {number} roomId   ID sali docelowej.
+ * @param {string} roomName Nazwa sali docelowej (do komunikatu).
+ */
+async function moveEquipment(eqId, roomId, roomName) {
+
+    const response = await fetch(
+        "/move_eq/" + eqId,
+        {
+            method: "POST",
+
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": document.querySelector('meta[name="csrf-token"]').content
+            },
+
+            body: JSON.stringify({
+                room_id: roomId
+            })
+        }
+    );
+
+    const data = await response.json();
+
+    // Serwer zwraca success: false przy błędzie walidacji
+    // (np. sprzęt już w tej sali, nieznana sala). Pokazujemy błąd
+    // i kończymy bez zmian w DOM.
+    if (!data.success) {
+
+        alert(data.error);
+        return;
+
+    }
+
+    // 1. Usunięcie kafelka sprzętu z listy.
+    const equipment = document.getElementById(
+        "eq-" + eqId
+    );
+
+    equipment.remove();
+
+    // 2. Komunikat potwierdzający na górze strony.
+    const message = document.getElementById(
+        "message"
+    );
+
+    message.textContent =
+        "Sprzęt przeniesiono do sali " + roomName + ".";
+
+    message.classList.remove("d-none");
+
+    // 3. Jeśli lista opustoszała, wstawiamy zastępczą kartę.
+    //    Bez tego użytkownik zobaczyłby pustą stronę bez żadnej informacji.
+    const equipmentList = document.getElementById(
+        "equipment-list"
+    );
+
+    if (equipmentList.children.length === 0) {
+
+        equipmentList.innerHTML =
+            '<div class="card border-0 shadow-sm">' +
+            '<div class="card-body text-center py-5">' +
+            '<h4 class="fw-bold">Brak sprzętu</h4>' +
+            '<p class="text-muted mb-0">' +
+            'W tej sali nie znajduje się obecnie żaden sprzęt.' +
+            '</p>' +
+            '</div>' +
+            '</div>';
+
+    }
+
+}
+
+</script>
+
+{% endblock %}
