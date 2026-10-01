@@ -55,6 +55,7 @@ Wygeneruj go raz na serwerze:
 
 ```bash
 python -c "import secrets; print(secrets.token_hex(32))"
+```
 Ustaw jako stałą zmienną środowiskową systemu (przez systemd, Docker
 albo konfigurację serwera). Nigdy nie commituj prawdziwego klucza
 do repozytorium.
