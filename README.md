@@ -30,7 +30,7 @@ sprzęt, oraz zapisuje historię przeniesień (kto, kiedy, skąd, dokąd).
 - pip
 
 ## Struktura projektu
-
+```
 Lokalizator/
  app.py # główna aplikacja Flask, trasy
  database.py # warstwa dostępu do bazy
@@ -41,7 +41,7 @@ Lokalizator/
  requirements.txt # zależności
  templates/ # szablony Jinja2
  static/ # pliki statyczne (CSS, ikony, manifest PWA)
-
+```
 
 ## Konfiguracja produkcyjna
 
