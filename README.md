@@ -32,15 +32,15 @@ sprzęt, oraz zapisuje historię przeniesień (kto, kiedy, skąd, dokąd).
 ## Struktura projektu
 
 Lokalizator/
-├── app.py # główna aplikacja Flask, trasy
-├── database.py # warstwa dostępu do bazy
-├── schema.sql # schemat bazy
-├── create_admin.py # skrypt tworzenia pierwszego admina
-├── room_groups.py # przypisanie sal do grup kolorystycznych
-├── apply_room_groups.py # skrypt synchronizujący grupy z bazą
-├── requirements.txt # zależności
-├── templates/ # szablony Jinja2
-└── static/ # pliki statyczne (CSS, ikony, manifest PWA)
+ app.py # główna aplikacja Flask, trasy
+ database.py # warstwa dostępu do bazy
+ schema.sql # schemat bazy
+ create_admin.py # skrypt tworzenia pierwszego admina
+ room_groups.py # przypisanie sal do grup kolorystycznych
+ apply_room_groups.py # skrypt synchronizujący grupy z bazą
+ requirements.txt # zależności
+ templates/ # szablony Jinja2
+ static/ # pliki statyczne (CSS, ikony, manifest PWA)
 
 
 ## Konfiguracja produkcyjna
