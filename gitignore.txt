@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Wirtualne środowisko
+venv/
+.venv/
+env/
+
+# Baza danych
+*.db
+*.db-wal
+*.db-shm
+
+# Visual Studio
+.vs/
+*.user
+
+# Zmienne środowiskowe
+.env
+
+# System
+.DS_Store
+Thumbs.db
